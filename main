@@ -1,0 +1,346 @@
+if game.PlaceId == 510444657 then
+
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+local Window = Rayfield:CreateWindow({
+   Name = "CRIM vs SWAT Script",
+   Icon = 0,
+   LoadingTitle = "2 Lame HUB",
+   LoadingSubtitle = "by ohCamm_",
+   ShowText = "Rayfield",
+   Theme = "Amethyst",
+   ToggleUIKeybind = "K",
+   DisableRayfieldPrompts = false,
+   DisableBuildWarnings = false,
+   ConfigurationSaving = {
+      Enabled = true,
+      FolderName = nil,
+      FileName = "Big Hub"
+   },
+   Discord = {
+      Enabled = false,
+      Invite = "noinvitelink",
+      RememberJoins = true
+   },
+   KeySystem = true,
+   KeySettings = {
+      Title = "CRIM vs SWAT | Key",
+      Subtitle = "Key System",
+      Note = "KEY IS 123",
+      FileName = "Key",
+      SaveKey = false,
+      GrabKeyFromSite = false,
+      Key = {"123"}
+   }
+})
+
+local MainTab = Window:CreateTab("Main", nil)
+local MainSection = MainTab:CreateSection("Player")
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local root = character:WaitForChild("HumanoidRootPart")
+
+local flySpeed = 50
+local bodyGyro, bodyVelocity
+local jumpValue = 50
+local jumpLoopConnection = nil
+
+_G.flyEnabled = false
+_G.flyStarted = false
+
+local function stopFlying()
+   if bodyGyro then bodyGyro:Destroy() bodyGyro = nil end
+   if bodyVelocity then bodyVelocity:Destroy() bodyVelocity = nil end
+   local humanoid = character:FindFirstChildOfClass("Humanoid")
+   if humanoid then
+      humanoid:ChangeState(Enum.HumanoidStateType.Freefall)
+   end
+end
+
+local function startFlying()
+   if not root then return end
+   bodyGyro = Instance.new("BodyGyro")
+   bodyGyro.P = 9e4
+   bodyGyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+   bodyGyro.CFrame = root.CFrame
+   bodyGyro.Parent = root
+   bodyVelocity = Instance.new("BodyVelocity")
+   bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+   bodyVelocity.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+   bodyVelocity.Parent = root
+end
+
+local gunModsEnabled = false
+local originalValues = {}
+
+local function captureOriginals(keys)
+   local garbage = getgc(true)
+   for i, t in pairs(garbage) do
+      if type(t) == "table" then
+         for _, key in pairs(keys) do
+            if rawget(t, key) and not originalValues[key] then
+               originalValues[key] = rawget(t, key)
+            end
+         end
+      end
+   end
+end
+
+local function applyGunMod(key, value)
+   local garbage = getgc(true)
+   for i, t in pairs(garbage) do
+      if type(t) == "table" then
+         if rawget(t, key) then
+            rawset(t, key, value)
+         end
+      end
+   end
+end
+
+local function revertGunMods()
+   for key, value in pairs(originalValues) do
+      applyGunMod(key, value)
+   end
+end
+
+captureOriginals({"ReloadTime", "AmmoPerClip", "FireRate", "BaseDamage", "CameraShakingEnabled"})
+
+local espConnections = {}
+
+local function clearESP()
+   for _, c in pairs(espConnections) do
+      pcall(function() c:Disconnect() end)
+   end
+   espConnections = {}
+   for _, p in pairs(Players:GetPlayers()) do
+      if p.Character then
+         for _, v in pairs(p.Character:GetDescendants()) do
+            if v.Name == "ESP_Highlight" or v.Name == "ESP_Tag" then
+               v:Destroy()
+            end
+         end
+      end
+   end
+end
+
+local function addESP(p)
+   if p == Players.LocalPlayer then return end
+   local function onChar(char)
+      local head = char:WaitForChild("Head", 5)
+      if not head then return end
+      local highlight = Instance.new("Highlight")
+      highlight.Name = "ESP_Highlight"
+      highlight.FillColor = Color3.fromRGB(255, 0, 0)
+      highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+      highlight.FillTransparency = 0.5
+      highlight.OutlineTransparency = 0
+      highlight.Adornee = char
+      highlight.Parent = char
+      local billboard = Instance.new("BillboardGui")
+      billboard.Name = "ESP_Tag"
+      billboard.Size = UDim2.new(0, 100, 0, 40)
+      billboard.StudsOffset = Vector3.new(0, 3, 0)
+      billboard.AlwaysOnTop = true
+      billboard.Adornee = head
+      billboard.Parent = char
+      local label = Instance.new("TextLabel")
+      label.Size = UDim2.fromScale(1, 1)
+      label.BackgroundTransparency = 1
+      label.TextColor3 = Color3.fromRGB(255, 255, 255)
+      label.TextStrokeTransparency = 0
+      label.Font = Enum.Font.GothamBold
+      label.TextSize = 14
+      label.Text = p.Name
+      label.Parent = billboard
+   end
+   if p.Character then onChar(p.Character) end
+   local c = p.CharacterAdded:Connect(onChar)
+   table.insert(espConnections, c)
+end
+
+RunService.RenderStepped:Connect(function()
+   if _G.flyEnabled and bodyVelocity and bodyGyro then
+      local cam = workspace.CurrentCamera
+      local move = Vector3.zero
+      if UserInputService:IsKeyDown(Enum.KeyCode.W) then move += cam.CFrame.LookVector end
+      if UserInputService:IsKeyDown(Enum.KeyCode.S) then move -= cam.CFrame.LookVector end
+      if UserInputService:IsKeyDown(Enum.KeyCode.A) then move -= cam.CFrame.RightVector end
+      if UserInputService:IsKeyDown(Enum.KeyCode.D) then move += cam.CFrame.RightVector end
+      if move.Magnitude > 0 then
+         move = move.Unit * flySpeed
+      else
+         bodyVelocity.Velocity = Vector3.zero
+      end
+      bodyVelocity.Velocity = move
+      bodyGyro.CFrame = cam.CFrame
+   end
+end)
+
+player.CharacterAdded:Connect(function(char)
+   character = char
+   root = character:WaitForChild("HumanoidRootPart")
+   stopFlying()
+   if _G.flyEnabled then
+      task.wait(0.5)
+      startFlying()
+   end
+end)
+
+local Button = MainTab:CreateButton({
+   Name = "Fly",
+   Callback = function()
+      _G.flyEnabled = not _G.flyEnabled
+      if _G.flyEnabled then
+         startFlying()
+      else
+         stopFlying()
+      end
+   end,
+})
+
+local Slider = MainTab:CreateSlider({
+   Name = "Fly Speed",
+   Range = {0, 500},
+   Increment = 1,
+   Suffix = "Speed",
+   CurrentValue = 40,
+   Flag = "sliderfly",
+   Callback = function(Value)
+      flySpeed = Value
+   end,
+})
+
+local Divider = MainTab:CreateDivider()
+
+local Slider = MainTab:CreateSlider({
+   Name = "Walk Speed",
+   Range = {1, 350},
+   Increment = 1,
+   Suffix = "Speed",
+   CurrentValue = 16,
+   Flag = "sliderws",
+   Callback = function(Value)
+      game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = Value
+   end,
+})
+
+local Slider = MainTab:CreateSlider({
+   Name = "Jump Power",
+   Range = {50, 500},
+   Increment = 1,
+   Suffix = "Power",
+   CurrentValue = 50,
+   Flag = "sliderjp",
+   Callback = function(Value)
+      jumpValue = Value
+      local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+      if humanoid then
+         if jumpLoopConnection then jumpLoopConnection:Disconnect() end
+         humanoid.JumpPower = jumpValue
+         jumpLoopConnection = humanoid:GetPropertyChangedSignal("JumpPower"):Connect(function()
+            humanoid.JumpPower = jumpValue
+         end)
+      end
+   end,
+})
+
+local GunTab = Window:CreateTab("Guns 🔫", nil)
+local Section = GunTab:CreateSection("Gun Mods")
+
+local Toggle = GunTab:CreateToggle({
+   Name = "Enable Gun Mods",
+   CurrentValue = false,
+   Flag = "Toggle1",
+   Callback = function(Value)
+      gunModsEnabled = Value
+      if not gunModsEnabled then
+         revertGunMods()
+      end
+   end,
+})
+
+local Divider = GunTab:CreateDivider()
+
+local Slider = GunTab:CreateSlider({
+   Name = "Reload Speed",
+   Range = {0, 2},
+   Increment = 0.10,
+   Suffix = "Speed",
+   CurrentValue = 2,
+   Flag = "sliderRspeed",
+   Callback = function(Value)
+      if gunModsEnabled then applyGunMod("ReloadTime", Value) end
+   end,
+})
+
+local Slider = GunTab:CreateSlider({
+   Name = "Ammo",
+   Range = {30, 9999999999999},
+   Increment = 50,
+   Suffix = "Ammo",
+   CurrentValue = 2,
+   Flag = "sliderGammo",
+   Callback = function(Value)
+      if gunModsEnabled then applyGunMod("AmmoPerClip", Value) end
+   end,
+})
+
+local Slider = GunTab:CreateSlider({
+   Name = "Fire Rate",
+   Range = {0, 0.15},
+   Increment = 0.01,
+   Suffix = "Rate",
+   CurrentValue = 0.15,
+   Flag = "sliderGfirerate",
+   Callback = function(Value)
+      if gunModsEnabled then applyGunMod("FireRate", Value) end
+   end,
+})
+
+local Slider = GunTab:CreateSlider({
+   Name = "Damage",
+   Range = {5, 100},
+   Increment = 1,
+   Suffix = "Damage",
+   CurrentValue = 7,
+   Flag = "sliderDamage",
+   Callback = function(Value)
+      if gunModsEnabled then applyGunMod("BaseDamage", Value) end
+   end,
+})
+
+local Toggle = GunTab:CreateToggle({
+   Name = "Recoil (Sniper)",
+   CurrentValue = true,
+   Flag = "ToggleSniper",
+   Callback = function(Value)
+      if gunModsEnabled then applyGunMod("CameraShakingEnabled", Value) end
+   end,
+})
+
+local GameTab = Window:CreateTab("Game 🎮", nil)
+local GameSection = GameTab:CreateSection("Visuals")
+
+local Toggle = GameTab:CreateToggle({
+   Name = "ESP",
+   CurrentValue = false,
+   Flag = "ToggleESP",
+   Callback = function(Value)
+      if Value then
+         for _, p in pairs(Players:GetPlayers()) do
+            addESP(p)
+         end
+         local c = Players.PlayerAdded:Connect(addESP)
+         table.insert(espConnections, c)
+      else
+         clearESP()
+      end
+   end,
+})
+
+end
